@@ -25,14 +25,15 @@ Parameters:
   UseOidcProvider:
     Type: String
     AllowedValues: [true, false]
-  SubjectClaim:
-    Type: String
+  # TODO: This is a breaking change. How does it affect the rest of the SAM CLI?
+  SubjectClaims:
+    Type: CommaDelimitedList
   CreateNewOidcProvider:
     Type: String
     AllowedValues: [true, false]
 
 Conditions:
-  MissingOidcProvider: !Equals [!Ref CreateNewOidcProvider, "true"] 
+  MissingOidcProvider: !Equals [!Ref CreateNewOidcProvider, "true"]
   DontUseOidc: !Not [!Equals [!Ref UseOidcProvider, "true"] ]
   MissingPipelineUser: !And [!Condition DontUseOidc, !Equals [!Ref PipelineUserArn, ""]]
   MissingPipelineExecutionRole: !Equals [!Ref PipelineExecutionRoleArn, ""]
@@ -45,10 +46,10 @@ Resources:
   OidcProvider:
     Type: AWS::IAM::OIDCProvider
     Condition: MissingOidcProvider
-    Properties: 
-      ClientIdList: 
+    Properties:
+      ClientIdList:
         - !Ref OidcClientId
-      ThumbprintList: 
+      ThumbprintList:
         - !Ref IdentityProviderThumbprint
       Url: !Ref OidcProviderUrl
 
@@ -147,27 +148,21 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:PrincipalTag/Role: aws-sam-pipeline-codebuild-service-role
-          - Fn::Sub: 
-              - |
-                {
-                  "Version": "2012-10-17",
-                  "Statement": [
-                    {
-                      "Effect": "Allow",
-                      "Principal": {
-                        "Federated": "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/${Url}"
-                      },
-                      "Action": "sts:AssumeRoleWithWebIdentity",
-                      "Condition": {
-                        "ForAllValues:StringLike": {
-                          "${Url}:aud": "${OidcClientId}",
-                          "${Url}:sub":  "${SubjectClaim}"
-                        }
-                      }
-                    }
-                  ]
-                }
-              - Url: !Select [1, !Split ["//", !Ref OidcProviderUrl]]
+          - Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Principal:
+                  # TODO: Use the OIDC Provider URL instead of hard-coding GitHub Actions.
+                  Federated: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+                Action:
+                  - 'sts:AssumeRoleWithWebIdentity'
+                Condition:
+                  StringEquals:
+                    # TODO: Use the OIDC Provider URL instead of hard-coding GitHub Actions.
+                    'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+                  StringEqualsIgnoreCase:
+                    # TODO: Use the OIDC Provider URL instead of hard-coding GitHub Actions.
+                    'token.actions.githubusercontent.com:sub': !Ref SubjectClaims
 
 
   ArtifactsBucket:
